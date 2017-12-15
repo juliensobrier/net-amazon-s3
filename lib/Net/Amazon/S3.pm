@@ -151,6 +151,7 @@ has 'err'    => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
 has 'errstr' => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
 has 'aws_session_token' => ( is => 'rw', isa => 'Str', required => 0 );
 
+
 __PACKAGE__->meta->make_immutable;
 
 my $KEEP_ALIVE_CACHESIZE = 10;
@@ -195,8 +196,6 @@ with a true value.
 
 Set this to C<1> if you want to use SSL-encrypted connections when talking
 to S3. Defaults to C<0>.
-
-To use SSL-encrypted connections, LWP::Protocol::https is required.
 
 =item timeout
 
@@ -252,12 +251,14 @@ sub BUILD {
         $ua = LWP::UserAgent::Determined->new(
             keep_alive            => $KEEP_ALIVE_CACHESIZE,
             requests_redirectable => [qw(GET HEAD DELETE PUT POST)],
+            ssl_opts => { verify_hostname => 0 },
         );
         $ua->timing('1,2,4,8,16,32');
     } else {
         $ua = LWP::UserAgent->new(
             keep_alive            => $KEEP_ALIVE_CACHESIZE,
             requests_redirectable => [qw(GET HEAD DELETE PUT POST)],
+            ssl_opts => { verify_hostname => 0 },
         );
     }
 
@@ -360,9 +361,9 @@ Returns an (unverified) bucket object from an account. Does no network access.
 =cut
 
 sub bucket {
-    my ( $self, $bucketname ) = @_;
+    my ( $self, $bucketname, $region ) = @_;
     return Net::Amazon::S3::Bucket->new(
-        { bucket => $bucketname, account => $self } );
+        { bucket => $bucketname, account => $self, region => $region || '' } );
 }
 
 =head2 delete_bucket
@@ -719,6 +720,7 @@ sub _send_request {
 
     my $response = $self->_do_http($http_request);
     my $content  = $response->content;
+    print $response->as_string, "\n";
 
     return $content unless $response->content_type eq 'application/xml';
     return unless $content;
@@ -748,6 +750,8 @@ sub _send_request_expect_nothing {
     return 1 if $response->code =~ /^2\d\d$/;
 
     # anything else is a failure, and we save the parsed result
+#     print $response->request->as_string, "\n";
+#     print $response->as_string, "\n";
     $self->_remember_errors( $response->content );
     return 0;
 }

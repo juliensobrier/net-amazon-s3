@@ -9,6 +9,11 @@ use URI::Escape qw( uri_escape_utf8 );
 use URI::QueryParam;
 use URI;
 use VM::EC2::Security::CredentialCache;
+use Net::Amazon::Signature::V4;
+
+use Data::Dumper;
+
+use Digest::SHA qw/sha256_hex hmac_sha256 hmac_sha256_hex/;
 
 # ABSTRACT: Create a signed HTTP::Request
 
@@ -26,6 +31,7 @@ has 'content' =>
     ( is => 'ro', isa => 'Str|CodeRef|ScalarRef', required => 0, default => '' );
 has 'metadata' =>
     ( is => 'ro', isa => 'HashRef', required => 0, default => sub { {} } );
+has 'region' => ( is => 'rw', isa => 'Str', required => 0, default => '');
 
 __PACKAGE__->meta->make_immutable;
 
@@ -37,11 +43,12 @@ sub http_request {
     my $headers  = $self->headers;
     my $content  = $self->content;
     my $metadata = $self->metadata;
+    my $region   = $self->region;
 
     my $http_headers = $self->_merge_meta( $headers, $metadata );
 
-    $self->_add_auth_header( $http_headers, $method, $path )
-        unless exists $headers->{Authorization};
+#     $self->_add_auth_header( $http_headers, $method, $path )
+#         unless exists $headers->{Authorization};
     my $protocol = $self->s3->secure ? 'https' : 'http';
     my $host = $self->s3->host;
     if ($self->s3->use_virtual_host) {
@@ -51,16 +58,24 @@ sub http_request {
         $host = "$bucket.$host";
     }
     my $uri = "$protocol://$host/$path";
+    
 
-    my $request
-        = HTTP::Request->new( $method, $uri, $http_headers, $content );
+    my $request = HTTP::Request->new($method, $uri, $http_headers, $content);
+        
+    my $aws_access_key_id     = $self->s3->aws_access_key_id;
+    my $aws_secret_access_key = $self->s3->aws_secret_access_key;
+    my $signer = Net::Amazon::Signature::V4 ->new($aws_access_key_id, $aws_secret_access_key, $region, 's3');
+    my $signed_req = $signer->sign($request);
+    
+    
+#     print $signed_req->url, "\n";
+#     print $signed_req->headers_as_string, "\n";
+#     print sha256_hex($content), "\n";
+    
+#     print $request->content(), "\n";
+#     print Dumper($content), "\n";
 
-    # my $req_as = $request->as_string;
-    # $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
-    # $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
-    # warn $req_as;
-
-    return $request;
+    return $signed_req;
 }
 
 sub query_string_authentication_uri {
@@ -127,77 +142,77 @@ sub _add_auth_header {
         Authorization => "AWS $aws_access_key_id:$encoded_canonical" );
 }
 
-# generate a canonical string for the given parameters.  expires is optional and is
-# only used by query string authentication.
-sub _canonical_string {
-    my ( $self, $method, $path, $headers, $expires ) = @_;
-    my %interesting_headers = ();
-    while ( my ( $key, $value ) = each %$headers ) {
-        my $lk = lc $key;
-        if (   $lk eq 'content-md5'
-            or $lk eq 'content-type'
-            or $lk eq 'date'
-            or $lk =~ /^$AMAZON_HEADER_PREFIX/ )
-        {
-            $interesting_headers{$lk} = $self->_trim($value);
-        }
-    }
+# # generate a canonical string for the given parameters.  expires is optional and is
+# # only used by query string authentication.
+# sub _canonical_string {
+#     my ( $self, $method, $path, $headers, $expires ) = @_;
+#     my %interesting_headers = ();
+#     while ( my ( $key, $value ) = each %$headers ) {
+#         my $lk = lc $key;
+#         if (   $lk eq 'content-md5'
+#             or $lk eq 'content-type'
+#             or $lk eq 'date'
+#             or $lk =~ /^$AMAZON_HEADER_PREFIX/ )
+#         {
+#             $interesting_headers{$lk} = $self->_trim($value);
+#         }
+#     }
+# 
+#     # these keys get empty strings if they don't exist
+#     $interesting_headers{'content-type'} ||= '';
+#     $interesting_headers{'content-md5'}  ||= '';
+# 
+#     # just in case someone used this.  it's not necessary in this lib.
+#     $interesting_headers{'date'} = ''
+#         if $interesting_headers{'x-amz-date'};
+# 
+#     # if you're using expires for query string auth, then it trumps date
+#     # (and x-amz-date)
+#     $interesting_headers{'date'} = $expires if $expires;
+# 
+#     my $buf = "$method\n";
+#     foreach my $key ( sort keys %interesting_headers ) {
+#         if ( $key =~ /^$AMAZON_HEADER_PREFIX/ ) {
+#             $buf .= "$key:$interesting_headers{$key}\n";
+#         } else {
+#             $buf .= "$interesting_headers{$key}\n";
+#         }
+#     }
+# 
+#     # don't include anything after the first ? in the resource...
+#     $path =~ /^([^?]*)/;
+#     $buf .= "/$1";
+# 
+#     # ...unless there any parameters we're interested in...
+#     if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/ ) {
+#         $buf .= "?$1";
+#     } elsif ( my %query_params = URI->new($path)->query_form ){
+#         #see if the remaining parsed query string provides us with any query string or upload id
+#         if($query_params{partNumber} && $query_params{uploadId}){
+#             #re-evaluate query string, the order of the params is important for request signing, so we can't depend on URI to do the right thing
+#             $buf .= sprintf("?partNumber=%s&uploadId=%s", $query_params{partNumber}, $query_params{uploadId});
+#         }
+#         elsif($query_params{uploadId}){
+#             $buf .= sprintf("?uploadId=%s",$query_params{uploadId});
+#         }
+#     }
+# 
+#     return $buf;
+# }
 
-    # these keys get empty strings if they don't exist
-    $interesting_headers{'content-type'} ||= '';
-    $interesting_headers{'content-md5'}  ||= '';
-
-    # just in case someone used this.  it's not necessary in this lib.
-    $interesting_headers{'date'} = ''
-        if $interesting_headers{'x-amz-date'};
-
-    # if you're using expires for query string auth, then it trumps date
-    # (and x-amz-date)
-    $interesting_headers{'date'} = $expires if $expires;
-
-    my $buf = "$method\n";
-    foreach my $key ( sort keys %interesting_headers ) {
-        if ( $key =~ /^$AMAZON_HEADER_PREFIX/ ) {
-            $buf .= "$key:$interesting_headers{$key}\n";
-        } else {
-            $buf .= "$interesting_headers{$key}\n";
-        }
-    }
-
-    # don't include anything after the first ? in the resource...
-    $path =~ /^([^?]*)/;
-    $buf .= "/$1";
-
-    # ...unless there any parameters we're interested in...
-    if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/ ) {
-        $buf .= "?$1";
-    } elsif ( my %query_params = URI->new($path)->query_form ){
-        my @interesting_keys = grep {
-             $_ eq 'partNumber'
-          or $_ eq 'uploadId'
-          or $_ =~ /^response-/
-        } sort keys %query_params;
-
-        # amazon likes decoded params, but still joined with &
-        $buf .= '?' . join('&', map{ $_ . '=' . $query_params{$_} } @interesting_keys ) if @interesting_keys;
-    }
-
-    return $buf;
-}
-
-# finds the hmac-sha1 hash of the canonical string and the aws secret access key and then
-# base64 encodes the result (optionally urlencoding after that).
-sub _encode {
-    my ( $self, $aws_secret_access_key, $str, $urlencode ) = @_;
-    my $hmac = Digest::HMAC_SHA1->new($aws_secret_access_key);
-    $hmac->add($str);
-    my $b64 = encode_base64( $hmac->digest, '' );
-    if ($urlencode) {
-        return $self->_urlencode($b64);
-    } else {
-        return $b64;
-    }
-}
+# # finds the hmac-sha1 hash of the canonical string and the aws secret access key and then
+# # base64 encodes the result (optionally urlencoding after that).
+# sub _encode {
+#     my ( $self, $aws_secret_access_key, $str, $urlencode ) = @_;
+#     my $hmac = Digest::HMAC_SHA1->new($aws_secret_access_key);
+#     $hmac->add($str);
+#     my $b64 = encode_base64( $hmac->digest, '' );
+#     if ($urlencode) {
+#         return $self->_urlencode($b64);
+#     } else {
+#         return $b64;
+#     }
+# }
 
 
 # generates an HTTP::Headers objects given one hash that represents http
@@ -225,10 +240,10 @@ sub _trim {
     return $value;
 }
 
-sub _urlencode {
-    my ( $self, $unencoded ) = @_;
-    return uri_escape_utf8( $unencoded, '^A-Za-z0-9_-' );
-}
+# sub _urlencode {
+#     my ( $self, $unencoded ) = @_;
+#     return uri_escape_utf8( $unencoded, '^A-Za-z0-9_-' );
+# }
 
 1;
 

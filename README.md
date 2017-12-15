@@ -1,3 +1,16 @@
+Fork of https://github.com/rustyconover/net-amazon-s3
+
+* THIS IS NOT READY FOR PRODUCTION.
+
+This fork adds V4 signatures and get the bucket region automatically if needed. 
+
+Not all functions have been updated. if you want to use this version, you will have to
+complete the work. Patches are welcome!
+
+
+
+Original Readme:
+
 # DESCRIPTION
 
 This module provides a Perlish interface to Amazon S3. From the

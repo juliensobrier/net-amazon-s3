@@ -335,13 +335,13 @@ sub uri {
 }
 
 sub query_string_authentication_uri {
-    my ($self, $query_form) = @_;
+    my $self = shift;
     return Net::Amazon::S3::Request::GetObject->new(
         s3     => $self->client->s3,
         bucket => $self->bucket->name,
         key    => $self->key,
         method => 'GET',
-    )->query_string_authentication_uri( $self->expires->epoch, $query_form );
+    )->query_string_authentication_uri( $self->expires->epoch );
 }
 
 sub _content_sub {
@@ -585,14 +585,12 @@ C<user_metadata>.
 
 =head2 query_string_authentication_uri
 
-  # use query string authentication, forcing download with custom filename
+  # use query string authentication
   my $object = $bucket->object(
     key          => 'images/my_hat.jpg',
     expires      => '2009-03-01',
   );
-  my $uri = $object->query_string_authentication_uri({
-    'response-content-disposition' => 'attachment; filename=abc.doc',
-  });
+  my $uri = $object->query_string_authentication_uri();
 
 =head2 size
 
@@ -650,3 +648,4 @@ To upload an object with user metadata, set C<user_metadata> at construction
 time to a hashref, with no C<x-amz-meta-> prefixes on the key names.  When
 downloading an object, the C<get>, C<get_decoded> and C<get_filename>
 ethods set the contents of C<user_metadata> to the same format.
+

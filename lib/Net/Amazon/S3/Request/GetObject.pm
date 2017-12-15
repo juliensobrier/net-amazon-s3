@@ -7,6 +7,7 @@ extends 'Net::Amazon::S3::Request';
 has 'bucket' => ( is => 'ro', isa => 'BucketName', required => 1 );
 has 'key'    => ( is => 'ro', isa => 'Str',        required => 1 );
 has 'method' => ( is => 'ro', isa => 'HTTPMethod', required => 1 );
+has 'region' => ( is => 'rw', isa => 'Str', required => 0, default => '');
 
 # ABSTRACT: An internal class to get an object
 
@@ -19,19 +20,17 @@ sub http_request {
         s3     => $self->s3,
         method => $self->method,
         path   => $self->_uri( $self->key ),
+        region	=> $self->region,
     )->http_request;
 }
 
 sub query_string_authentication_uri {
-    my ( $self, $expires, $query_form ) = @_;
-
-    my $uri = URI->new( $self->_uri( $self->key ) );
-    $uri->query_form( %$query_form ) if $query_form;
+    my ( $self, $expires ) = @_;
 
     return Net::Amazon::S3::HTTPRequest->new(
         s3     => $self->s3,
         method => $self->method,
-        path   => $uri->as_string,
+        path   => $self->_uri( $self->key ),
     )->query_string_authentication_uri($expires);
 }
 
@@ -64,3 +63,4 @@ This method returns a HTTP::Request object.
 =head2 query_string_authentication_uri
 
 This method returns query string authentication URI.
+

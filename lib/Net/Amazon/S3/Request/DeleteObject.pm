@@ -8,6 +8,7 @@ extends 'Net::Amazon::S3::Request';
 
 has 'bucket' => ( is => 'ro', isa => 'BucketName', required => 1 );
 has 'key'    => ( is => 'ro', isa => 'Str',        required => 1 );
+has 'region' => ( is => 'rw', isa => 'Str', required => 0, default => '');
 
 __PACKAGE__->meta->make_immutable;
 
@@ -18,6 +19,7 @@ sub http_request {
         s3     => $self->s3,
         method => 'DELETE',
         path   => $self->_uri( $self->key ),
+        region	=> $self->region,
     )->http_request;
 }
 

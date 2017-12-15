@@ -143,22 +143,6 @@ is( get( $object->query_string_authentication_uri() ),
     'newly created object can be fetch by authentication uri'
 );
 
-
-my $signed_url = $object->query_string_authentication_uri({
-    'response-content-disposition' => 'attachment; filename=abc.doc'
-});
-
-like(
-    $signed_url,
-    qr/response-content-disposition/,
-    'cuttom response headers included in the signed uri'
-);
-
-is( get( $signed_url ),
-    'this is the value',
-    'newly created object can be fetch by authentication uri with custom headers'
-);
-
 $object->delete;
 
 # upload a public object

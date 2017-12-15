@@ -5,10 +5,12 @@ use MooseX::StrictConstructor 0.16;
 use Carp;
 use File::stat;
 use IO::File 1.14;
+use Slurp;
 
 has 'account' => ( is => 'ro', isa => 'Net::Amazon::S3', required => 1 );
 has 'bucket'  => ( is => 'ro', isa => 'Str',             required => 1 );
 has 'creation_date' => ( is => 'ro', isa => 'Maybe[Str]', required => 0 );
+has 'region' => ( is => 'rw', isa => 'Str', required => 0, default => '');
 
 __PACKAGE__->meta->make_immutable;
 
@@ -145,6 +147,7 @@ sub add_key {
         value     => $value,
         acl_short => $acl_short,
         headers   => $conf,
+        region		=> $self->set_region,
     )->http_request;
 
     if ( ref($value) ) {
@@ -229,6 +232,7 @@ sub copy_key {
         value     => '',
         acl_short => $acl_short,
         headers   => $conf,
+        region		=> $self->set_region,
     )->http_request;
 
     my $response = $acct->_do_http( $http_request );
@@ -304,6 +308,7 @@ sub get_key {
         bucket => $self->bucket,
         key    => $key,
         method => $method || 'GET',
+        region	=> $self->set_region,
     )->http_request;
 
     my $response = $acct->_do_http( $http_request, $filename );
@@ -371,6 +376,7 @@ sub delete_key {
         s3     => $self->account,
         bucket => $self->bucket,
         key    => $key,
+        region		=> $self->set_region,
     )->http_request;
 
     return $self->account->_send_request_expect_nothing($http_request);
@@ -449,11 +455,13 @@ sub get_acl {
             s3     => $account,
             bucket => $self->bucket,
             key    => $key,
+            region		=> $self->set_region,
         )->http_request;
     } else {
         $http_request = Net::Amazon::S3::Request::GetBucketAccessControl->new(
             s3     => $account,
             bucket => $self->bucket,
+            region		=> $self->set_region,
         )->http_request;
     }
 
@@ -524,6 +532,7 @@ sub set_acl {
             key       => $key,
             acl_short => $conf->{acl_short},
             acl_xml   => $conf->{acl_xml},
+            region		=> $self->set_region,
         )->http_request;
     } else {
         $http_request = Net::Amazon::S3::Request::SetBucketAccessControl->new(
@@ -532,6 +541,7 @@ sub set_acl {
 
             acl_short => $conf->{acl_short},
             acl_xml   => $conf->{acl_xml},
+            region		=> $self->set_region,
         )->http_request;
     }
 
@@ -552,6 +562,7 @@ sub get_location_constraint {
     my $http_request = Net::Amazon::S3::Request::GetBucketLocationConstraint->new(
         s3     => $self->account,
         bucket => $self->bucket,
+        region		=> $self->set_region,
     )->http_request;
 
     my $xpc = $self->account->_send_request($http_request);
@@ -562,6 +573,33 @@ sub get_location_constraint {
         $lc = undef;
     }
     return $lc;
+}
+
+sub set_region {
+  my ($self, $region) = @_;
+	$region ||= $self->region || '';
+
+	if ($region eq '') {
+# 		print "Retrieve region\n";
+		my $protocol = $self->account->secure ? 'https' : 'http';
+		my $host = $self->account->host;
+		my $bucket = $self->bucket;
+		my $uri = "$protocol://$host/$bucket/";
+    if ($self->account->use_virtual_host) {
+        # use https://bucketname.s3.amazonaws.com instead of https://s3.amazonaws.com/bucketname
+        # see http://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html
+        $uri = "$protocol://$bucket.$host/";
+    }
+	
+		my $response = $self->account->ua->get($uri);
+# 		print $response->as_string, "\n";
+	
+		$region = $response->header('x-amz-bucket-region') || '';
+	}
+	
+	$self->region($region);
+	
+	return $region;
 }
 
 # proxy up the err requests
@@ -590,38 +628,8 @@ sub _content_sub {
 
     croak "$filename not a readable file with fixed size"
         unless -r $filename and ( -f _ || $remaining );
-    my $fh = IO::File->new( $filename, 'r' )
-        or croak "Could not open $filename: $!";
-    $fh->binmode;
 
-    return sub {
-        my $buffer;
-
-        # upon retries the file is closed and we must reopen it
-        unless ( $fh->opened ) {
-            $fh = IO::File->new( $filename, 'r' )
-                or croak "Could not open $filename: $!";
-            $fh->binmode;
-            $remaining = $stat->size;
-        }
-
-        # warn "read remaining $remaining";
-        unless ( my $read = $fh->read( $buffer, $blksize ) ) {
-
-#                       warn "read $read buffer $buffer remaining $remaining";
-            croak
-                "Error while reading upload content $filename ($remaining remaining) $!"
-                if $! and $remaining;
-
-            # otherwise, we found EOF
-            $fh->close
-                or croak "close of upload content $filename failed: $!";
-            $buffer ||= ''
-                ;    # LWP expects an emptry string on finish, read returns 0
-        }
-        $remaining -= length($buffer);
-        return $buffer;
-    };
+		return slurp $filename;
 }
 
 1;

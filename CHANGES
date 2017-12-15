@@ -1,5 +1,10 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.82 Thu Oct 03 18:33:19 GMT 2017
+     - Fork
+     - use Net::Amazon::Signature::V4 to create V4 signatures
+     - get the bucket region automatically
+
 0.81 {{NEXT}}
      - Restore CHANGES files format
      - Change path to new github repo

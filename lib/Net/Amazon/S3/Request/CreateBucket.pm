@@ -9,6 +9,7 @@ has 'bucket'    => ( is => 'ro', isa => 'BucketName',      required => 1 );
 has 'acl_short' => ( is => 'ro', isa => 'Maybe[AclShort]', required => 0 );
 has 'location_constraint' =>
     ( is => 'ro', isa => 'Maybe[LocationConstraint]', required => 0 );
+has 'region' => ( is => 'rw', isa => 'Str', required => 0, default => '');
 
 __PACKAGE__->meta->make_immutable;
 
@@ -35,6 +36,7 @@ sub http_request {
         path    => $self->bucket . '/',
         headers => $headers,
         content => $content,
+        region	=> $self->region,
     )->http_request;
 }
 

@@ -13,6 +13,7 @@ has 'acl_short' => ( is => 'ro', isa => 'Maybe[AclShort]', required => 0 );
 has 'headers' =>
     ( is => 'ro', isa => 'HashRef', required => 0, default => sub { {} } );
 has 'encryption' => ( is => 'ro', isa => 'Maybe[Str]',      required => 0 );
+has 'region' => ( is => 'rw', isa => 'Str', required => 0, default => '');
 
 __PACKAGE__->meta->make_immutable;
 
@@ -26,13 +27,14 @@ sub http_request {
     if ( defined $self->encryption ) {
         $headers->{'x-amz-server-side-encryption'} = $self->encryption;
     }
-
+    
     return Net::Amazon::S3::HTTPRequest->new(
         s3      => $self->s3,
         method  => 'PUT',
         path    => $self->_uri( $self->key ),
         headers => $self->headers,
         content => $self->value,
+        region	=> $self->region,
     )->http_request;
 }
 
